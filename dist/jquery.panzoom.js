@@ -491,6 +491,7 @@
 			while(i--) {
 				$[method]($set[i], 'transform', transform);
 			}
+			$(this).data('transformMatrix', transform);
 		},
 
 		/**
@@ -508,7 +509,10 @@
 				this.setTransform(transform);
 			} else {
 				// Retrieve the transform
-				transform = $[this.isSVG ? 'attr' : 'style'](transformElem, 'transform');
+				transform = $(this).data('transformMatrix');
+				if (transform === undefined) {
+					transform = $[this.isSVG ? 'attr' : 'style'](transformElem, 'transform');
+				}
 			}
 
 			// Convert any transforms set by the user to matrix format
@@ -937,7 +941,10 @@
 						(touches = e.touches) &&
 							((touches.length === 1 && !options.disablePan) || touches.length === 2) :
 						// Mouse/Pointer: Ignore right click
-						!options.disablePan && e.which === 1) {
+						// Modified: pan with second (middle) mouse button or SHIFT+third mouse button
+						!options.disablePan &&
+							(e.which == 2  ||
+								(e.which == 3 && e.shiftKey))) {
 
 						e.preventDefault();
 						e.stopPropagation();

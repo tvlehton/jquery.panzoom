@@ -2,13 +2,16 @@
 
 [![Build Status](https://travis-ci.org/timmywil/jquery.panzoom.png?branch=master)](https://travis-ci.org/timmywil/jquery.panzoom)
 
-Panzoom is a progressive plugin to create panning and zooming functionality for an element. Panzoom supports the same browsers as jQuery 2.0 and can be used with jQuery 1.9.0+ or jQuery 2.0+.
+Panzoom is a progressive plugin to create panning and zooming functionality for an element.
 Rather than setting width and height on an image tag, Panzoom uses CSS transforms and matrix functions to take advantage of hardware/GPU acceleration in the browser, which means the element can be _anything_: an image, a video, an iframe, a canvas, text, WHATEVER.
-And although IE<=8 is not supported, this plugin is future-proof.
 
-jquery.panzoom.min.js (12.42kb/4.74kb gzip), included in this repo, is compressed with [uglifyjs](https://github.com/mishoo/UglifyJS).
+jquery.panzoom.min.js (11.9kb/4.4kb gzip), included in this repo, is compressed with [uglifyjs](https://github.com/mishoo/UglifyJS).
 
 For common support questions, see [the FAQ](https://github.com/timmywil/jquery.panzoom#faq) at the bottom.
+
+## Dependencies
+
+jquery.panzoom prefers jQuery 3.0.0+, but works with jQuery 1.9.0+ and jQuery 2.0.0+. jquery.panzoom supports IE9+.
 
 ## Mobile support
 
@@ -18,12 +21,15 @@ You'll be amazed at how well this performs on your mobile device.
 
 iOS and Android are supported.
 
-**Pointer** (IE11+), **touch**, and **mouse** events are supported.
+**Touch** and **mouse** events are supported.
 
 ## SVG support
 
-Panzoom supports panning and zooming SVG elements directly, in browsers that support SVG. Note that animations do not work on SVG elements,
-but one could implement transitions manually by overriding the `setTransform()` method and integrating a tweening library for javascript animations (such as [tween.js](http://www.createjs.com/#!/TweenJS)).
+Panzoom supports panning and zooming SVG elements directly, in browsers that support SVG.
+
+In IE9-11 and Edge 13-14+, CSS animations/transitions do not work on SVG elements, at least for the transform style. They do work in other browsers.
+
+One could implement transitions manually in those browsers by overriding the `setTransform()` method and integrating a tweening library for javascript animations (such as [tween.js](http://www.createjs.com/#!/TweenJS)).
 
 **Compatibility note:** *There is a [known issue with Firefox](https://bugzilla.mozilla.org/show_bug.cgi?id=530985) and using the `focal` option. Firefox does not correctly maintain the dimensions of SVG parent elements, which throws off offsets. If using the `focal` option with SVG, the workaround is to set the correct offset on the Panzoom instance manually using `Panzoom.prototype.parentOffset` ([example](http://jsfiddle.net/timmywil/Vu8nA/)).*
 
@@ -34,7 +40,7 @@ but Panzoom supports AMD for javascript module love.
 With script tags:
 
 ```html
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
 <script src="/js/plugins/jquery.panzoom.js"></script>
 ```
 
@@ -86,10 +92,25 @@ Panzoom.defaults = {
   disablePan: false,
   disableZoom: false,
 
+  // Pan only on the X or Y axes
+  disableXAxis: false,
+  disableYAxis: false,
+
+  // Set whether you'd like to pan on left (1), middle (2), or right click (3)
+  which: 1,
+
   // The increment at which to zoom
   // adds/subtracts to the scale each time zoomIn/Out is called
   increment: 0.3,
 
+  // Turns on exponential zooming
+  // If false, zooming will be incremented linearly
+  exponential: true,
+
+  // Pan only when the scale is greater than minScale
+  panOnlyWhenZoomed: false,
+
+  // min and max zoom scales
   minScale: 0.4,
   maxScale: 5,
 
@@ -123,7 +144,7 @@ Panzoom.defaults = {
   // Use multiple Panzoom instances for that use case.
   $set: $elem,
 
-  // Zoom buttons/links collection (you can also bind these yourself - e.g. `$button.on("click", function( e ) { e.preventDefault(); $elem.panzoom("zoomIn"); });` )
+  // Zoom buttons/links collection (you can also bind these yourself - e.g. `$button.on("click", function( e ) { e.preventDefault(); $elem.panzoom("zoom"); });` )
   $zoomIn: $(),
   $zoomOut: $(),
   // Range input on which to bind zooming functionality
@@ -274,7 +295,9 @@ If the method is passed a boolean, true will indicate to perform a zoom-out base
 $elem.panzoom("resetDimensions");
 ```
 
-Panzoom caches the dimensions of the Panzoom element and its parent to cater to quick move events. Whenever these dimensions change, it is necessary to call `resetDimensions()`.
+Panzoom caches the dimensions of the Panzoom element and its parent to cater to quick move events.
+Whenever these dimensions change, it is necessary to call `resetDimensions()`.
+However, as of version 3.1.0, this is no longer required.
 
 ### `disable()`
 
@@ -384,22 +407,7 @@ Applies the transition to the element. If `off` is true, it removes the transiti
 
 ## Static properties
 
-Static properties are there for convenience, but are subject to change in future versions.
-
-### `Panzoom.events`
-Type: *Object*
-
-This is a convenience object for binding your own pointer/touch/mouse events.
-
-**Properties:**
-```js
-// May equal "mousedown touchstart" or "pointerdown" depending on PointerEvent support
-Panzoom.events.down;
-// "mouseup touchend" or "pointerup"
-Panzoom.events.up;
-// "mousemove touchmove" or "pointermove"
-Panzoom.events.move;
-```
+Static properties are there for convenience, but are **subject to change in future versions**.
 
 ### `Panzoom.rmatrix`
 Type: *RegExp*
@@ -505,7 +513,7 @@ See [CONTRIBUTING.md](https://github.com/timmywil/jquery.panzoom/blob/master/CON
 
 1\. How do I make it so that I never see the background behind the Panzoom element? [example](http://codepen.io/timmywil/pen/qjvBF)
 
-  - This can be done with the `contain` option. Set `contain` to `"invert"` and make sure the Panzoom element is the same size or larger than its parent.
+  - This can be done with the `contain` option. Set `contain` to `"invert"` or `"automatic"` and make sure the Panzoom element is the same size or larger than its parent.
 
 ```js
   $('.panzoom-elements').panzoom({
@@ -540,19 +548,7 @@ $('#large-image').panzoom({
 });
 ```
 
-5\. I am using Panzoom with an `<object>` tag. Why isn't it working?
+5\. I am using Panzoom with an `<object>` tag. It zooms but does not pan. [example](http://codepen.io/timmywil/pen/qNpykA)
 
-In some legacy browsers, data cannot be attached to `<object>` elements.
-This means that events don't get attached when using jQuery 1.x.
-Switching to jQuery 2.x, which allows attaching data to `<object>` elements, should fix the issue.
+Object elements can eat up events, making it so they never reach Panzoom. To fix this, disable pointer events on the object tag and call Panzoom using a wrapper.
 
-6\. When the browser is resized, focal point zooming seems to go haywire. What's going on?
-
-Panzoom caches the dimensions of the Panzoom element and its parent to obviate the need for these calculations during zooming.
-Fortunately, Panzoom exposes a method to fix this. Whenever dimensions change, call the `resetDimensions()` method.
-
-```js
-$(window).on('resize', function() {
-  $elem.panzoom('resetDimensions');
-});
-```

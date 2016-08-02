@@ -41,6 +41,34 @@
       </script>
     </section>
     <hr>
+    <section id="pan-when-zoomed">
+      <h1>Pan only when zoomed</h1>
+      <div class="parent">
+        <div class="panzoom">
+          <img src="http://blog.millermedeiros.com/wp-content/uploads/2010/04/awesome_tiger.svg" width="900" height="900">
+        </div>
+      </div>
+      <div class="buttons">
+        <button class="zoom-in">Zoom In</button>
+        <button class="zoom-out">Zoom Out</button>
+        <input type="range" class="zoom-range">
+        <button class="reset">Reset</button>
+      </div>
+      <script>
+        (function() {
+          var $section = $('#pan-when-zoomed');
+          $section.find('.panzoom').panzoom({
+            $zoomIn: $section.find(".zoom-in"),
+            $zoomOut: $section.find(".zoom-out"),
+            $zoomRange: $section.find(".zoom-range"),
+            $reset: $section.find(".reset"),
+            panOnlyWhenZoomed: true,
+            minScale: 1
+          });
+        })();
+      </script>
+    </section>
+    <hr>
     <section id="contain">
       <h1>Containment within the parent element</h1>
       <div class="panzoom-parent">
@@ -82,7 +110,7 @@
         <button class="reset">Reset</button>
       </div>
       <style>
-        #inverted-contain .panzoom { width: 100%; height: 100%; }
+        #inverted-contain .panzoom { width: 100%; }
       </style>
       <script>
         (function() {
@@ -97,6 +125,61 @@
             minScale: 1,
             contain: 'invert'
           }).panzoom('zoom');
+        })();
+      </script>
+    </section>
+    <hr>
+    <section id="auto-contain">
+      <h1>Automatically determine the best containment option based on the panzoom element's relation to the parent</h1>
+      <div class="panzoom-parent">
+        <img class="panzoom" src="http://blog.millermedeiros.com/wp-content/uploads/2010/04/awesome_tiger.svg" width="900" height="900">
+      </div>
+      <div class="buttons">
+        <button class="zoom-in">Zoom In</button>
+        <button class="zoom-out">Zoom Out</button>
+        <input type="range" class="zoom-range">
+        <button class="reset">Reset</button>
+      </div>
+      <script>
+        (function() {
+          var $section = $('#auto-contain');
+          $section.find('.panzoom').panzoom({
+            $zoomIn: $section.find(".zoom-in"),
+            $zoomOut: $section.find(".zoom-out"),
+            $zoomRange: $section.find(".zoom-range"),
+            $reset: $section.find(".reset"),
+            startTransform: 'scale(1.1)',
+            increment: 0.1,
+            minScale: 0.5,
+            contain: 'automatic'
+          }).panzoom('zoom');
+        })();
+      </script>
+    </section>
+    <hr>
+    <section id="rotated">
+      <h1>Panning and zooming a rotated element</h1>
+      <div class="parent">
+        <div class="panzoom">
+          <img src="http://blog.millermedeiros.com/wp-content/uploads/2010/04/awesome_tiger.svg" width="900" height="900">
+        </div>
+      </div>
+      <div class="buttons">
+        <button class="zoom-in">Zoom In</button>
+        <button class="zoom-out">Zoom Out</button>
+        <input type="range" class="zoom-range">
+        <button class="reset">Reset</button>
+      </div>
+      <script>
+        (function() {
+          var $section = $('#rotated').first();
+          $section.find('.panzoom').panzoom({
+            $zoomIn: $section.find(".zoom-in"),
+            $zoomOut: $section.find(".zoom-out"),
+            $zoomRange: $section.find(".zoom-range"),
+            $reset: $section.find(".reset"),
+            startTransform: 'rotateZ(180deg)'
+          });
         })();
       </script>
     </section>
@@ -393,6 +476,72 @@
             $zoomRange: $section.find(".zoom-range"),
             $reset: $section.find(".reset"),
             $set: $section.find('.parent > div')
+          });
+        })();
+      </script>
+    </section>
+    <hr>
+    <section id="x-only">
+      <h1>Pan only along the X axis (disableYAxis: true)</h1>
+      <style>
+        #set .parent { text-align: center; }
+        #set .parent .panzoom { border: 3px solid; }
+        #set .parent > div { display: inline-block; width: 30%; }
+        #set .parent img { width: 100%; }
+      </style>
+      <div class="parent clearfix">
+        <div class="panzoom">
+          <img src="http://blog.millermedeiros.com/wp-content/uploads/2010/04/awesome_tiger.svg">
+        </div>
+      </div>
+      <div class="buttons">
+        <button class="zoom-in">Zoom In</button>
+        <button class="zoom-out">Zoom Out</button>
+        <input type="range" class="zoom-range">
+        <button class="reset">Reset</button>
+      </div>
+      <script>
+        (function() {
+          var $section = $('#x-only');
+          $section.find('.panzoom').panzoom({
+            $zoomIn: $section.find(".zoom-in"),
+            $zoomOut: $section.find(".zoom-out"),
+            $zoomRange: $section.find(".zoom-range"),
+            $reset: $section.find(".reset"),
+            disableYAxis: true
+          });
+        })();
+      </script>
+    </section>
+    <hr>
+    <section id="y-only">
+      <h1>Pan only along the Y axis (disableXAxis: true)</h1>
+      <style>
+        #set .parent { text-align: center; }
+        #set .parent .panzoom { border: 3px solid; }
+        #set .parent > div { display: inline-block; width: 30%; }
+        #set .parent img { width: 100%; }
+      </style>
+      <div class="parent clearfix">
+        <div class="panzoom">
+          <img src="http://blog.millermedeiros.com/wp-content/uploads/2010/04/awesome_tiger.svg">
+        </div>
+      </div>
+      <div class="buttons">
+        <button class="zoom-in">Zoom In</button>
+        <button class="zoom-out">Zoom Out</button>
+        <input type="range" class="zoom-range">
+        <button class="reset">Reset</button>
+      </div>
+      <script>
+        (function() {
+          var $section = $('#y-only');
+          $section.find('.panzoom').panzoom({
+            $zoomIn: $section.find(".zoom-in"),
+            $zoomOut: $section.find(".zoom-out"),
+            $zoomRange: $section.find(".zoom-range"),
+            $reset: $section.find(".reset"),
+            disableXAxis: true
           });
         })();
       </script>

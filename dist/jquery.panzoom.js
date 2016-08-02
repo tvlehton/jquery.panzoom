@@ -1,6 +1,6 @@
 /**
- * @license jquery.panzoom.js v2.0.5
- * Updated: Mon Feb 01 2016
+ * @license jquery.panzoom.js v3.1.1
+ * Updated: Tue Jul 26 2016
  * Add pan and zoom functionality to any element
  * Copyright (c) timmy willison
  * Released under the MIT license
@@ -23,63 +23,15 @@
 }(typeof window !== 'undefined' ? window : this, function(window, $) {
 	'use strict';
 
-	// Common properties to lift for touch or pointer events
-	var list = 'over out down up move enter leave cancel'.split(' ');
-	var hook = $.extend({}, $.event.mouseHooks);
-	var events = {};
-
-	// Support pointer events in IE11+ if available
-	if ( window.PointerEvent ) {
-		$.each(list, function( i, name ) {
-			// Add event name to events property and add fixHook
-			$.event.fixHooks[
-				(events[name] = 'pointer' + name)
-			] = hook;
-		});
-	} else {
-		var mouseProps = hook.props;
-		// Add touch properties for the touch hook
-		hook.props = mouseProps.concat(['touches', 'changedTouches', 'targetTouches', 'altKey', 'ctrlKey', 'metaKey', 'shiftKey']);
-
-		/**
-		 * Support: Android
-		 * Android sets pageX/Y to 0 for any touch event
-		 * Attach first touch's pageX/pageY and clientX/clientY if not set correctly
-		 */
-		hook.filter = function( event, originalEvent ) {
-			var touch;
-			var i = mouseProps.length;
-			if ( !originalEvent.pageX && originalEvent.touches && (touch = originalEvent.touches[0]) ) {
-				// Copy over all mouse properties
-				while(i--) {
-					event[mouseProps[i]] = touch[mouseProps[i]];
-				}
-			}
-			return event;
-		};
-
-		$.each(list, function( i, name ) {
-			// No equivalent touch events for over and out
-			if (i < 2) {
-				events[ name ] = 'mouse' + name;
-			} else {
-				var touch = 'touch' +
-					(name === 'down' ? 'start' : name === 'up' ? 'end' : name);
-				// Add fixHook
-				$.event.fixHooks[ touch ] = hook;
-				// Add event names to events property
-				events[ name ] = touch + ' mouse' + name;
-			}
-		});
-	}
-
-	$.pointertouch = events;
-
 	var document = window.document;
 	var datakey = '__pz__';
 	var slice = Array.prototype.slice;
-	var pointerEvents = !!window.PointerEvent;
+	var rIE11 = /trident\/7./i;
 	var supportsInputEvent = (function() {
+		// IE11 returns a false positive
+		if (rIE11.test(navigator.userAgent)) {
+			return false;
+		}
 		var input = document.createElement('input');
 		input.setAttribute('oninput', 'return');
 		return typeof input.oninput === 'function';
@@ -88,9 +40,8 @@
 	// Regex
 	var rupper = /([A-Z])/g;
 	var rsvg = /^http:[\w\.\/]+svg$/;
-	var rinline = /^inline/;
 
-	var floating = '(\\-?[\\d\\.e]+)';
+	var floating = '(\\-?\\d[\\d\\.e-]*)';
 	var commaSpace = '\\,?\\s*';
 	var rmatrix = new RegExp(
 		'^matrix\\(' +
@@ -103,7 +54,7 @@
 	);
 
 	/**
-	 * Utility for determing transform matrix equality
+	 * Utility for determining transform matrix equality
 	 * Checks backwards to test translation first
 	 * @param {Array} first
 	 * @param {Array} second
@@ -111,7 +62,7 @@
 	function matrixEquals(first, second) {
 		var i = first.length;
 		while(--i) {
-			if (+first[i] !== +second[i]) {
+			if (Math.round(+first[i]) !== Math.round(+second[i])) {
 				return false;
 			}
 		}
@@ -293,7 +244,7 @@
 
 		// Build the appropriately-prefixed transform style property name
 		// De-camelcase
-		this._transform = !this.isSVG && $.cssProps.transform.replace(rupper, '-$1').toLowerCase();
+		this._transform = $.cssProps.transform.replace(rupper, '-$1').toLowerCase();
 
 		// Build the transition value
 		this._buildTransition();
@@ -310,15 +261,15 @@
 
 		this.enable();
 
+		this.scale = this.getMatrix()[0];
+		this._checkPanWhenZoomed();
+
 		// Save the instance
 		$.data(elem, datakey, this);
 	}
 
 	// Attach regex for possible use (immutable)
 	Panzoom.rmatrix = rmatrix;
-
-	// Container for event names
-	Panzoom.events = $.pointertouch;
 
 	Panzoom.defaults = {
 		// Should always be non-empty
@@ -337,12 +288,27 @@
 		disablePan: false,
 		disableZoom: false,
 
+		// Pan only on the X or Y axes
+		disableXAxis: false,
+		disableYAxis: false,
+
+		// Set whether you'd like to pan on left (1), middle (2), or right click (3)
+		which: 1,
+
 		// The increment at which to zoom
 		// adds/subtracts to the scale each time zoomIn/Out is called
 		increment: 0.3,
 
-		minScale: 0.4,
-		maxScale: 5,
+		// Turns on exponential zooming
+		// If false, zooming will be incremented linearly
+		exponential: true,
+
+		// Pan only when the scale is greater than minScale
+		panOnlyWhenZoomed: false,
+
+		// min and max zoom scales
+		minScale: 0.3,
+		maxScale: 6,
 
 		// The default step for the range input
 		// Precendence: default < HTML attribute < option setting
@@ -411,39 +377,30 @@
 		 */
 		resetDimensions: function() {
 			// Reset container properties
-			var $parent = this.$parent;
-			this.container = {
-				width: $parent.innerWidth(),
-				height: $parent.innerHeight()
-			};
-			var po = $parent.offset();
+			this.container = this.$parent[0].getBoundingClientRect();
+
+			// Set element properties
 			var elem = this.elem;
-			var $elem = this.$elem;
-			var dims;
-			if (this.isSVG) {
-				dims = elem.getBoundingClientRect();
-				dims = {
-					left: dims.left - po.left,
-					top: dims.top - po.top,
-					width: dims.width,
-					height: dims.height,
-					margin: { left: 0, top: 0 }
-				};
-			} else {
-				dims = {
-					left: $.css(elem, 'left', true) || 0,
-					top: $.css(elem, 'top', true) || 0,
-					width: $elem.innerWidth(),
-					height: $elem.innerHeight(),
-					margin: {
-						top: $.css(elem, 'marginTop', true) || 0,
-						left: $.css(elem, 'marginLeft', true) || 0
-					}
-				};
-			}
-			dims.widthBorder = ($.css(elem, 'borderLeftWidth', true) + $.css(elem, 'borderRightWidth', true)) || 0;
-			dims.heightBorder = ($.css(elem, 'borderTopWidth', true) + $.css(elem, 'borderBottomWidth', true)) || 0;
-			this.dimensions = dims;
+			// getBoundingClientRect() works with SVG, offsetWidth does not
+			var dims = elem.getBoundingClientRect();
+			var absScale = Math.abs(this.scale);
+			this.dimensions = {
+				width: dims.width,
+				height: dims.height,
+				left: $.css(elem, 'left', true) || 0,
+				top: $.css(elem, 'top', true) || 0,
+				// Borders and margins are scaled
+				border: {
+					top: $.css(elem, 'borderTopWidth', true) * absScale || 0,
+					bottom: $.css(elem, 'borderBottomWidth', true) * absScale || 0,
+					left: $.css(elem, 'borderLeftWidth', true) * absScale || 0,
+					right: $.css(elem, 'borderRightWidth', true) * absScale || 0
+				},
+				margin: {
+					top: $.css(elem, 'marginTop', true) * absScale || 0,
+					left: $.css(elem, 'marginLeft', true) * absScale || 0
+				}
+			};
 		},
 
 		/**
@@ -482,14 +439,23 @@
 
 		/**
 		 * Sets a transform on the $set
+		 * For SVG, the style attribute takes precedence
+		 * and allows us to animate
 		 * @param {String} transform
 		 */
 		setTransform: function(transform) {
-			var method = this.isSVG ? 'attr' : 'style';
 			var $set = this.$set;
 			var i = $set.length;
 			while(i--) {
-				$[method]($set[i], 'transform', transform);
+				$.style($set[i], 'transform', transform);
+
+				// Support IE9-11, Edge 13-14+
+				// Set attribute alongside style attribute
+				// since IE and Edge do not respect style settings on SVG
+				// See https://css-tricks.com/transforms-on-svg-elements/
+				if (this.isSVG) {
+					$set[i].setAttribute('transform', transform);
+				}
 			}
 			$(this).data('transformMatrix', transform);
 		},
@@ -512,12 +478,22 @@
 				transform = $(this).data('transformMatrix');
 				if (transform === undefined) {
 					transform = $[this.isSVG ? 'attr' : 'style'](transformElem, 'transform');
+
+					// IE and Edge still set the transform style properly
+					// They just don't render it on SVG
+					// So we get a correct value here
+					transform = $.style(transformElem, 'transform');
+
+					if (this.isSVG && (!transform || transform === 'none')) {
+						transform = $.attr(transformElem, 'transform') || 'none';
+					}
 				}
 			}
 
 			// Convert any transforms set by the user to matrix format
 			// by setting to computed
 			if (transform !== 'none' && !rmatrix.test(transform)) {
+
 				// Get computed and set for next time
 				this.setTransform(transform = $.css(transformElem, 'transform'));
 			}
@@ -556,61 +532,67 @@
 			if (typeof matrix === 'string') {
 				matrix = this.getMatrix(matrix);
 			}
-			var dims, container, marginW, marginH, diffW, diffH, left, top, width, height;
 			var scale = +matrix[0];
-			var $parent = this.$parent;
 			var contain = typeof options.contain !== 'undefined' ? options.contain : this.options.contain;
 
 			// Apply containment
 			if (contain) {
-				dims = this._checkDims();
-				container = this.container;
-				width = dims.width + dims.widthBorder;
-				height = dims.height + dims.heightBorder;
-				// Use absolute value of scale here as negative scale doesn't mean even smaller
-				marginW = (width * Math.abs(scale)) > container.width ? ((width * Math.abs(scale)) - container.width) / 2 : 0;
-				marginH = (height * Math.abs(scale)) > container.height ? ((height * Math.abs(scale)) - container.height) / 2 : 0;
-				left = dims.left + dims.margin.left;
-				top = dims.top + dims.margin.top;
-				if (contain === 'invert') {
-					diffW = width > container.width ? width - container.width : 0;
-					diffH = height > container.height ? height - container.height : 0;
-					marginW += (container.width - width) / 2;
-					marginH += (container.height - height) / 2;
-					matrix[4] = Math.max(Math.min(matrix[4], marginW - left), -marginW - left - diffW);
-					matrix[5] = Math.max(Math.min(matrix[5], marginH - top), -marginH - top - diffH + dims.heightBorder);
+				var dims = options.dims;
+				if (!dims) {
+					this.resetDimensions();
+					dims = this.dimensions;
+				}
+				var container = this.container;
+				var width = dims.width;
+				var height = dims.height;
+				var conWidth = container.width;
+				var conHeight = container.height;
+				var zoomAspectW = conWidth / width;
+				var zoomAspectH = conHeight / height;
+
+				var marginW = ((width - conWidth) / 2);
+				var marginH = ((height - conHeight) / 2);
+
+				if (contain === 'invert' || contain === 'automatic' && zoomAspectW < 1.01) {
+					matrix[4] = Math.max(Math.min(matrix[4], marginW), -marginW);
 				} else {
-					// marginW += dims.widthBorder / 2;
-					marginH += dims.heightBorder / 2;
-					diffW = container.width > width ? container.width - width : 0;
-					diffH = container.height > height ? container.height - height : 0;
-					// If the element is not naturally centered, assume full margin right
-					if ($parent.css('textAlign') !== 'center' || !rinline.test($.css(this.elem, 'display'))) {
-						marginW = marginH = 0;
-					} else {
-						diffW = 0;
-					}
-					matrix[4] = Math.min(
-						Math.max(matrix[4], marginW - left),
-						-marginW - left + diffW
-					);
-					matrix[5] = Math.min(
-						Math.max(matrix[5], marginH - top),
-						-marginH - top + diffH
-					);
+					matrix[4] = Math.min(Math.max(matrix[4], marginW), -marginW);
+				}
+
+				if (contain === 'invert' || (contain === 'automatic' && zoomAspectH < 1.01)) {
+					matrix[5] = Math.max(Math.min(matrix[5], marginH), -marginH);
+				} else {
+					matrix[5] = Math.min(Math.max(matrix[5], marginH), -marginH);
 				}
 			}
+
+			// Animate
 			if (options.animate !== 'skip') {
 				// Set transition
 				this.transition(!options.animate);
 			}
-			// Update range
+
+			// Update range element
 			if (options.range) {
 				this.$zoomRange.val(scale);
 			}
 
 			// Set the matrix on this.$set
+			if (this.options.disableXAxis || this.options.disableYAxis) {
+				var originalMatrix = this.getMatrix();
+				if (this.options.disableXAxis) {
+					matrix[4] = originalMatrix[4];
+				}
+				if (this.options.disableYAxis) {
+					matrix[5] = originalMatrix[5];
+				}
+			}
 			this.setTransform('matrix(' + matrix.join(',') + ')');
+
+			this.scale = scale;
+
+			// Disable/enable panning if zooming is at minimum and panOnlyWhenZoomed is true
+			this._checkPanWhenZoomed(scale);
 
 			if (!options.silent) {
 				this._trigger('change', matrix);
@@ -703,10 +685,17 @@
 			if (options.disableZoom) { return; }
 			var animate = false;
 			var matrix = options.matrix || this.getMatrix();
+			var startScale = +matrix[0];
 
 			// Calculate zoom based on increment
 			if (typeof scale !== 'number') {
-				scale = +matrix[0] + (options.increment * (scale ? -1 : 1));
+				// Just use a number a little greater than 1
+				// Below 1 can use normal increments
+				if (options.exponential && startScale - options.increment >= 1) {
+					scale = Math[scale ? 'sqrt' : 'pow'](startScale, 2);
+				} else {
+					scale = startScale + (options.increment * (scale ? -1 : 1));
+				}
 				animate = true;
 			}
 
@@ -722,14 +711,18 @@
 			if (focal && !options.disablePan) {
 				// Adapted from code by Florian Günther
 				// https://github.com/florianguenther/zui53
-				var dims = this._checkDims();
+				this.resetDimensions();
+				var dims = options.dims = this.dimensions;
 				var clientX = focal.clientX;
 				var clientY = focal.clientY;
-				// Adjust the focal point for default transform-origin => 50% 50%
+
+				// Adjust the focal point for transform-origin 50% 50%
+				// SVG elements have a transform origin of 0 0
 				if (!this.isSVG) {
-					clientX -= (dims.width + dims.widthBorder) / 2;
-					clientY -= (dims.height + dims.heightBorder) / 2;
+					clientX -= (dims.width / startScale) / 2;
+					clientY -= (dims.height / startScale) / 2;
 				}
+
 				var clientV = new Vector(clientX, clientY, 1);
 				var surfaceM = new Matrix(matrix);
 				// Supply an offset manually if necessary
@@ -737,7 +730,7 @@
 				var offsetM = new Matrix(1, 0, o.left - this.$doc.scrollLeft(), 0, 1, o.top - this.$doc.scrollTop());
 				var surfaceV = surfaceM.inverse().x(offsetM.inverse().x(clientV));
 				var scaleBy = scale / matrix[0];
-				surfaceM = surfaceM.x(new Matrix([ scaleBy, 0, 0, scaleBy, 0, 0 ]));
+				surfaceM = surfaceM.x(new Matrix([scaleBy, 0, 0, scaleBy, 0, 0]));
 				clientV = offsetM.x(surfaceM.x(surfaceV));
 				matrix[4] = +matrix[4] + (clientX - clientV.e(0));
 				matrix[5] = +matrix[5] + (clientY - clientV.e(1));
@@ -855,6 +848,9 @@
 					case 'transition':
 						this.transition();
 						break;
+					case 'panOnlyWhenZoomed':
+						this._checkPanWhenZoomed();
+						break;
 					case '$set':
 						if (value instanceof $ && value.length) {
 							this.$set = value;
@@ -867,14 +863,31 @@
 		},
 
 		/**
+		 * Disable/enable panning depending on whether the current scale
+		 * matches the minimum
+		 * @param {Number} [scale]
+		 * @private
+		 */
+		_checkPanWhenZoomed: function(scale) {
+			if (!scale) {
+				scale = this.getMatrix()[0];
+			}
+			var options = this.options;
+			if (options.panOnlyWhenZoomed) {
+				var toDisable = scale === options.minScale;
+				if (options.disablePan !== toDisable) {
+					this.option('disablePan', toDisable);
+				}
+			}
+		},
+
+		/**
 		 * Initialize base styles for the element and its parent
 		 */
 		_initStyle: function() {
 			var styles = {
-				// Promote the element to it's own compositor layer
-				// This setting seems to break non-animated zooming, its prevents the graphics from being re-rendered and simply scales a previous bitmap of the web page
-				//'backface-visibility': 'hidden',
-				// Set to defaults for the namespace
+				// Set the same default whether SVG or HTML
+				// transform-origin cannot be changed to 50% 50% in IE9-11 or Edge 13-14+
 				'transform-origin': this.isSVG ? '0 0' : '50% 50%'
 			};
 			// Set elem styles
@@ -918,8 +931,8 @@
 			var self = this;
 			var options = this.options;
 			var ns = options.eventNamespace;
-			var str_start = pointerEvents ? 'pointerdown' + ns : ('touchstart' + ns + ' mousedown' + ns);
-			var str_click = pointerEvents ? 'pointerup' + ns : ('touchend' + ns + ' click' + ns);
+			var str_start = 'touchstart' + ns + ' mousedown' + ns;
+			var str_click = 'touchend' + ns + ' click' + ns;
 			var events = {};
 			var $reset = this.$reset;
 			var $zoomRange = this.$zoomRange;
@@ -939,12 +952,13 @@
 					var touches;
 					if (e.type === 'touchstart' ?
 						// Touch
-						(touches = e.touches) &&
+						(touches = e.touches || e.originalEvent.touches) &&
 							((touches.length === 1 && !options.disablePan) || touches.length === 2) :
 						// Mouse/Pointer: Ignore right click
 						// Modified: pan with second (middle) mouse button or SHIFT+third mouse button
+						//!options.disablePan && e.which === options.which) {
 						!options.disablePan &&
-							(e.which == 2  ||
+							(e.which == 2 ||
 								(e.which == 3 && e.shiftKey))) {
 
 						e.preventDefault();
@@ -952,6 +966,11 @@
 						self._startMove(e, touches);
 					}
 				};
+				// Prevent the contextmenu event
+				// if we're binding to right-click
+				if (options.which === 3) {
+					events.contextmenu = false;
+				}
 			}
 			this.$elem.on(events);
 
@@ -1002,8 +1021,8 @@
 
 			if ($zoomRange.length) {
 				events = {};
-				// Cannot prevent default action here, just use pointerdown/mousedown
-				events[ (pointerEvents ? 'pointerdown' : 'mousedown') + ns ] = function() {
+				// Cannot prevent default action here, just use mousedown
+				events[ 'mousedown' + ns ] = function() {
 					self.transition(true);
 				};
 				// Zoom on input events if available and change events
@@ -1038,25 +1057,12 @@
 
 		/**
 		 * Set transition property for later use when zooming
-		 * If SVG, create necessary animations elements for translations and scaling
 		 */
 		_buildTransition: function() {
 			if (this._transform) {
 				var options = this.options;
 				this._transition = this._transform + ' ' + options.duration + 'ms ' + options.easing;
 			}
-		},
-
-		/**
-		 * Checks dimensions to make sure they don't need to be re-calculated
-		 */
-		_checkDims: function() {
-			var dims = this.dimensions;
-			// Rebuild if width or height is still 0
-			if (!dims.width || !dims.height) {
-				this.resetDimensions();
-			}
-			return this.dimensions;
 		},
 
 		/**
@@ -1106,7 +1112,7 @@
 		_startMove: function(event, touches) {
 			var move, moveEvent, endEvent,
 				startDistance, startScale, startMiddle,
-				startPageX, startPageY;
+				startPageX, startPageY, touch;
 			var self = this;
 			var options = this.options;
 			var ns = options.eventNamespace;
@@ -1117,10 +1123,7 @@
 			var panOptions = { matrix: matrix, animate: 'skip' };
 
 			// Use proper events
-			if (pointerEvents) {
-				moveEvent = 'pointermove';
-				endEvent = 'pointerup';
-			} else if (event.type === 'touchstart') {
+			if (event.type === 'touchstart') {
 				moveEvent = 'touchmove';
 				endEvent = 'touchend';
 			} else {
@@ -1147,9 +1150,10 @@
 				startMiddle = this._getMiddle(touches);
 				move = function(e) {
 					e.preventDefault();
+					touches = e.touches || e.originalEvent.touches;
 
 					// Calculate move on middle point
-					var middle = self._getMiddle(touches = e.touches);
+					var middle = self._getMiddle(touches);
 					var diff = self._getDistance(touches) - startDistance;
 
 					// Set zoom
@@ -1168,8 +1172,13 @@
 					startMiddle = middle;
 				};
 			} else {
-				startPageX = event.pageX;
-				startPageY = event.pageY;
+				if (touches && (touch = touches[0])) {
+					startPageX = touch.pageX;
+					startPageY = touch.pageY;
+				} else {
+					startPageX = event.pageX;
+					startPageY = event.pageY;
+				}
 
 				/**
 				 * Mousemove/touchmove function to pan the element
@@ -1177,9 +1186,17 @@
 				 */
 				move = function(e) {
 					e.preventDefault();
+					touches = e.touches || e.originalEvent.touches;
+					var coords;
+					if (touches) {
+						coords = touches[0] || { pageX: 0, pageY: 0 };
+					} else {
+						coords = e;
+					}
+
 					self.pan(
-						origPageX + e.pageX - startPageX,
-						origPageY + e.pageY - startPageY,
+						origPageX + coords.pageX - startPageX,
+						origPageY + coords.pageY - startPageY,
 						panOptions
 					);
 				};

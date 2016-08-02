@@ -872,7 +872,8 @@
 		_initStyle: function() {
 			var styles = {
 				// Promote the element to it's own compositor layer
-				'backface-visibility': 'hidden',
+				// This setting seems to break non-animated zooming, its prevents the graphics from being re-rendered and simply scales a previous bitmap of the web page
+				//'backface-visibility': 'hidden',
 				// Set to defaults for the namespace
 				'transform-origin': this.isSVG ? '0 0' : '50% 50%'
 			};
